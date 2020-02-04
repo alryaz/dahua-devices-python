@@ -536,7 +536,7 @@ class Device(_BaseDevice):
             "reboot":                           ("reboot", False),
             "shutdown":                         ("shutdown", False),
             "get_serial_number":                ("getSerialNo", "sn"),
-            "get_device_type":                  ("getDeviceType", "type"),
+            "get_device_type":                  ("getDeviceType", True),
             "get_hardware_version":             ("getHardwareVersion", "version"),
             "get_software_version":             ("getSoftwareVersion", True),
             "get_machine_name":                 ("getMachineName", "name"),
