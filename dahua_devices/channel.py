@@ -3,14 +3,14 @@ __all__ = [
 ]
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Union, Optional
+from typing import TYPE_CHECKING, Any, Union, Optional, TypeVar
 
 if TYPE_CHECKING:
     from .device import _BaseDevice
 
-
+ChannelDevice = TypeVar('ChannelDevice', bound='_BaseDevice')
 class Channel:
-    def __init__(self, device: '_BaseDevice', index: int) -> None:
+    def __init__(self, device: ChannelDevice, index: int) -> None:
         if device is None:
             raise ValueError('Cannot create channel without parent device')
         self._device = device
@@ -34,7 +34,7 @@ class Channel:
         return '<Dahua:Channel(' + repr(self._device) + ', ' + str(self._index) + ')>'
 
     @property
-    def device(self) -> '_BaseDevice':
+    def device(self) -> ChannelDevice:
         return self._device
 
     @property

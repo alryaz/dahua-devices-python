@@ -46,6 +46,7 @@ class _BaseDevice:
     _configuration_device: Dict = NotImplemented
     _configuration_channel: Dict = NotImplemented
     _aliases: Dict = NotImplemented
+    _actions_cache: Dict[str, str] = dict()
 
     def __init__(self, host: str, port: int, username: str, password: str, use_ssl=False, use_digest_auth=False,
                  channel_number_offset=1, rtsp_port=554) -> None:
@@ -149,6 +150,10 @@ class _BaseDevice:
 
         for call_config, aliases in self._aliases.items():
             if attr_name in aliases:
+                cache_key = 'action_' + attr_name if attr_name in self._actions_cache else None
+                if cache_key and cache_key in self._cache:
+                    return lambda *args, **kwargs: self._cache[cache_key]
+
                 if isinstance(call_config, str):
                     call_config = [call_config]
                 method = super().__getattribute__(call_config[0])
@@ -157,7 +162,23 @@ class _BaseDevice:
                 if isinstance(alias_params, str):
                     alias_params = [alias_params]
 
-                return lambda *args, **kwargs: method(*call_config[1:], *alias_params, *args, **kwargs)
+                method_args = call_config[1:]
+                if cache_key:
+                    def method_call(*args, **kwargs):
+                        if cache_key in self._cache:
+                            return self._cache[cache_key]
+
+                        # noinspection PyBroadException
+                        try:
+                            result = method(*method_args, *alias_params, *args, **kwargs)
+                        except:
+                            result = None
+
+                        self._cache[cache_key] = result
+                        return result
+
+                    return method_call
+                return lambda *args, **kwargs: method(*method_args, *alias_params, *args, **kwargs)
 
         raise AttributeError("Object does not contain attribute '%s'" % attr_name)
 
@@ -286,6 +307,7 @@ class _BaseDevice:
         return channel
 
     def make_request(self, url, headers=None, decode=True):
+        print('this', url)
         request = urllib.request.Request(
             url=url,
             headers=self._generate_request_headers(headers),
@@ -322,7 +344,6 @@ class _BaseDevice:
         :rtype: dict, list, NoneType
         """
         request_url = self.generate_url(path=CGI_CONFIG, action='getConfig', name=raw_config_key)
-        print(request_url)
         response_obj, response_text = self.make_request(request_url)
         result = self._process_response(response_obj, response_text, 'table.' + raw_config_key, 'config', raw_config_key)
         if update_cache and isinstance(result, dict):
@@ -514,10 +535,13 @@ class Device(_BaseDevice):
         ("_param_action", SCRIPT_MAGIC_BOX): {
             "reboot":                           ("reboot", False),
             "shutdown":                         ("shutdown", False),
+            "get_serial_number":                ("getSerialNo", "sn"),
             "get_device_type":                  ("getDeviceType", "type"),
             "get_hardware_version":             ("getHardwareVersion", "version"),
+            "get_software_version":             ("getSoftwareVersion", True),
             "get_machine_name":                 ("getMachineName", "name"),
             "get_system_info":                  ("getSystemInfo", None),
+            "get_vendor":                       ("getVendor", "vendor"),
             "get_max_extra_stream":             ({"action": "getProductDefinition",
                                                   "name": "MaxExtraStream"}, ("table", "MaxExtraStream")),
             "get_language_capabilities":        ("getLanguageCaps", lambda result: (result['Languages'].split(',')
@@ -525,6 +549,7 @@ class Device(_BaseDevice):
                                                                                     else None))
         }
     }
+    _actions_cache = ["get_serial_number", "get_software_version", "get_device_type", "get_vendor"]
 
     def _param_action(self, script_name: str, params: Union[str, Mapping[str, Union[type, str]]],
                       access_key_return: Optional[Union[str, Tuple[Union[int, str]], Callable]] = None, **kwargs):
@@ -579,6 +604,12 @@ class Device(_BaseDevice):
                 return current_object
             return result
 
+    @property
+    def serial_number(self):
+        if 'action_get_serial_number' in self._cache:
+            return self._cache['action_get_serial_number']
+
+        return self.get_serial_number()
 
 class EventsListener(threading.Thread):
     def __init__(self,
@@ -589,7 +620,7 @@ class EventsListener(threading.Thread):
 
         self._callbacks = set()
         self.stopped = threading.Event()
-        if not monitored_events:
+        if monitored_events is None:
             monitored_events = ['All']
         self._monitored_events = monitored_events
         self._device = device
@@ -621,23 +652,6 @@ class EventsListener(threading.Thread):
         if not callable(callback):
             raise TypeError
         self._callbacks.remove(callback)
-
-    async def listen_events_async(self) -> None:
-        '''Async events listener (NOT FINISHED!)'''
-        # @TODO: finish async event listener should the performance be better
-        raise NotImplementedError
-
-        async with aiohttp.request(
-                url=self.subscribe_url,
-                method='GET',
-                auth=aiohttp.BasicAuth(self.__username, self.__password),
-                timeout=aiohttp.ClientTimeout(sock_connect=2)
-        ) as resp:
-            try:
-                async for data in resp.content.iter_any():
-                    line = data.decode('utf-8')
-            except asyncio.TimeoutError:
-                _LOGGER.debug('Socket closed because of timeout')
 
     def listen_events_sync(self) -> bool:
         events_url = self.subscribe_url

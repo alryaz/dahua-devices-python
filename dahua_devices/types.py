@@ -1,5 +1,5 @@
 """Type definitions used in Dahua project"""
-from typing import Dict, Any, Callable, Union, Mapping, Iterable, Optional
+from typing import Dict, Any, Callable, Union, Mapping, Iterable
 
 # Update functions
 InfoRetVal = Dict[str, Any]
